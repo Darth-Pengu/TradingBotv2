@@ -201,11 +201,11 @@ async def moralis_trending_feed(callback):
 async def bitquery_trending_feed(callback):
     api_key = BITQUERY_API_KEY
     if not api_key:
-        logger.warning("Bitquery trending feed not enabled (no API key).")
+        logger.warning("Bitquery trending feed not enabled (no OAuth token).")
         return
     url = "https://streaming.bitquery.io/graphql"
     q = {"query": "{Solana{DEXTrades(limit:10){baseCurrency{address}}}}"}
-    headers = {"X-API-KEY": api_key}
+    headers = {"Authorization": f"Bearer {api_key}"}
     while True:
         try:
             logger.info(f"Using Bitquery key: {api_key[:6]}... (len={len(api_key)})")
