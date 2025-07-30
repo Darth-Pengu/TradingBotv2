@@ -199,7 +199,7 @@ async def moralis_trending_feed(callback):
         await asyncio.sleep(120)
         
 async def bitquery_trending_feed(callback):
-    api_key = BITQUERY_API_KEY  # This should be your 'ory_at_...' OAuth token
+    api_key = BITQUERY_API_KEY
     if not api_key:
         logger.warning("Bitquery trending feed not enabled (no OAuth token).")
         return
@@ -219,14 +219,14 @@ async def bitquery_trending_feed(callback):
                         text = await r.text()
                         logger.error(f"Bitquery HTTP error: {r.status}, text: {text}")
                         await asyncio.sleep(180)
-                        continue
+                        continue  # SKIP processing/fallback if not 200
                     try:
                         data = await r.json()
                     except Exception:
                         text = await r.text()
                         logger.error(f"Bitquery non-JSON response: {text}")
                         await asyncio.sleep(180)
-                        continue
+                        continue  # SKIP processing/fallback on JSON error
                     if not data or "data" not in data:
                         logger.error(f"Bitquery response missing 'data' key: {data}")
                         await asyncio.sleep(180)
