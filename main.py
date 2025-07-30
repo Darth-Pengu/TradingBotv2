@@ -475,7 +475,6 @@ async def update_position_prices_and_wallet():
         await asyncio.sleep(18)
 
 # ==== DASHBOARD_HTML ====
-DASHBOARD_HTML = """ (INSERT THE HTML DASHBOARD CODE FROM MY PREVIOUS MESSAGE HERE—DO NOT TRUNCATE) """
 
 async def dashboard_page(request):
     return web.Response(text=DASHBOARD_HTML, content_type='text/html')
