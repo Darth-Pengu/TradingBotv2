@@ -474,7 +474,265 @@ async def update_position_prices_and_wallet():
         if bal: globals()["current_wallet_balance"] = bal
         await asyncio.sleep(18)
 
-# ==== DASHBOARD_HTML ====
+# ==== DASHBOARD_HTML ==== 
+DASHBOARD_HTML = """
+<!DOCTYPE html>
+<html>
+<head>
+<title>Jay's UP AI Trading Dashboard</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link href="https://fonts.googleapis.com/css?family=Inter:600,900&display=swap" rel="stylesheet">
+<style>
+body {background: #101724; color: #ecf1fa; font-family: 'Inter', Arial, sans-serif; margin:0; padding:0;}
+#header {
+    background: #232a42; display: flex; justify-content: space-between; align-items:center;
+    padding: 20px 44px 18px 44px; border-bottom: 2.2px solid #2380e0; flex-wrap:wrap; row-gap:8px;
+}
+h1 {color:#2380e0; font-size:2em; margin:0; font-weight:900;}
+.status-on {color: #24d47c; font-size:1.2em;}
+.status-off {color:#F24859;font-size:1.13em;}
+#leaderboard {display:flex;gap:18px;margin-top:18px;}
+.lboard-card {background:#203053;border-radius:9px;box-shadow:0 2px 7px #0006;padding:12px 19px;text-align:center;min-width:165px;}
+.lboard-card.gold {border: 2.5px solid gold;}
+.lboard-card.silver {border:2.5px solid silver;}
+.lboard-card.bronze {border:2.5px solid #ca8048;}
+.lboard-label {color:#a8b8d0;font-size:.85em;}
+.lboard-value {font-size:1.45em;font-weight:900;}
+#bots-row {display:flex; gap:22px; margin-top:36px;}
+.bot-slab {
+    background:#1b2437;border-radius:12px;flex:1;padding:24px 18px 21px 18px;
+    box-shadow:0 1px 18px #171c2a2a;margin-bottom:24px;min-width:240px;
+}
+.bot-slab-header {font-weight:900; font-size:1.18em; color:#2897f4;}
+.bot-metric-table {width:100%; margin:13px 0 5px 0;}
+.bot-metric-table td {padding:5px 9px;font-size:1.03em;}
+.win-cell {color:#2cca70;}
+.loss-cell {color:#F24859;}
+.pct-cell {font-weight:700;color:#297fff;}
+#positions-table {
+    width:100%; border-collapse:collapse; border-radius:12px;
+    background: #171c29; margin-bottom: 16px; margin-top: 36px;
+}
+#positions-table th, #positions-table td {
+    padding:7px 7px; text-align:center; font-size:1em; border-bottom:1px solid #222;
+}
+#positions-table th {background:#212a35; color:#a8b8d0;}
+#positions-table tr:hover td {background: #24344b;}
+#positions-table td.positive {color:#2cca70;}
+#positions-table td.negative {color:#F24859;}
+#log-container {
+    background:#131a27; border-radius:12px; padding:12px 9px; font-size:1em; color:#b5bede;
+    margin-top:22px; height:130px; overflow-y:auto;
+}
+#log-container b { color:#2380e0;}
+@media (max-width:900px) {
+    #header, #bots-row {flex-direction:column;}
+    #leaderboard {flex-direction:column;}
+    .bot-slab {min-width:0;}
+}
+</style>
+</head>
+<body>
+<div id="header">
+  <div>
+    <h1>ToxiBot v2</h1>
+    <span id="botstat" class="status-on">ACTIVE</span>
+  </div>
+  <div>
+    <span style="color:#a7b3c8;">Wallet:</span> <b id="wallet" style="color:#24d47c;"></b>
+    <span style="color:#a7b3c8;margin-left:22px;">Exposure:</span> <span id="exposure"></span>
+    <span style="color:#a7b3c8;margin-left:18px;">P/L:</span> <span id="pl"></span>
+    <span style="color:#a7b3c8;margin-left:18px;">Win %:</span> <span id="winrate"></span>
+    <span style="color:#a7b3c8;margin-left:18px;">Daily Loss:</span> <span id="dloss"></span>
+  </div>
+</div>
+<div id="leaderboard">
+  <div class="lboard-card gold">
+    <div class="lboard-label">🥇 1st: <span id="top-bot-name"></span></div>
+    <div class="lboard-value" id="top-bot-pl"></div>
+  </div>
+  <div class="lboard-card silver">
+    <div class="lboard-label">🥈 2nd</div>
+    <div class="lboard-value" id="mid-bot-pl"></div>
+  </div>
+  <div class="lboard-card bronze">
+    <div class="lboard-label">🥉 3rd</div>
+    <div class="lboard-value" id="low-bot-pl"></div>
+  </div>
+</div>
+<div id="bots-row">
+  <div class="bot-slab">
+    <div class="bot-slab-header">Ultra-Early Discovery</div>
+    <table class="bot-metric-table">
+      <tr><td>Wins/Total:</td><td id="ultra-buys"></td></tr>
+      <tr><td>Win%:</td><td class="pct-cell" id="ultra-win"></td></tr>
+      <tr><td>Net P/L:</td><td id="ultra-pl"></td></tr>
+    </table>
+  </div>
+  <div class="bot-slab">
+    <div class="bot-slab-header">2-Minute Scalper</div>
+    <table class="bot-metric-table">
+      <tr><td>Wins/Total:</td><td id="scalper-buys"></td></tr>
+      <tr><td>Win%:</td><td class="pct-cell" id="scalper-win"></td></tr>
+      <tr><td>Net P/L:</td><td id="scalper-pl"></td></tr>
+    </table>
+  </div>
+  <div class="bot-slab">
+    <div class="bot-slab-header">Community/Whale</div>
+    <table class="bot-metric-table">
+      <tr><td>Wins/Total:</td><td id="community-buys"></td></tr>
+      <tr><td>Win%:</td><td class="pct-cell" id="community-win"></td></tr>
+      <tr><td>Net P/L:</td><td id="community-pl"></td></tr>
+    </table>
+  </div>
+</div>
+<table id='positions-table'>
+  <thead>
+    <tr>
+      <th>Token</th><th>Source</th><th>Size</th><th>ML</th>
+      <th>Entry</th><th>Last</th><th>P/L</th><th>P/L %</th><th>Phase</th><th>Age</th>
+    </tr>
+  </thead>
+  <tbody id='positions-tbody'></tbody>
+</table>
+<div id="log-container"></div>
+<script>
+function formatAge(secs) {
+    if (!secs) return ""; let d=Math.floor(secs/86400), h=Math.floor((secs%86400)/3600), m=Math.floor((secs%3600)/60);
+    let arr=[]; if(d)arr.push(d+'d');if(h)arr.push(h+'h');if(m)arr.push(m+'m'); return arr.join(' ')||(secs+'s');
+}
+var ws=new WebSocket("ws://"+location.host+"/ws");
+ws.onmessage=function(ev){
+  var d=JSON.parse(ev.data||"{}");
+  document.getElementById('botstat').className = ((d.status||"").toLowerCase().includes("live")?"status-on":"status-off");
+  document.getElementById('botstat').textContent = ((d.status||"").toLowerCase().includes("live"))?'ACTIVE':'NOT ACTIVE';
+  document.getElementById('wallet').textContent = (d.wallet_balance??"0.00").toFixed(2)+' SOL';
+  document.getElementById('exposure').textContent = (d.exposure||0).toFixed(3)+' SOL';
+  document.getElementById('pl').textContent = (d.pl<0?'':'+' )+(d.pl||0).toFixed(3);
+  document.getElementById('winrate').textContent = ((d.winrate||0).toFixed(1)+'%');
+  document.getElementById('dloss').textContent = (d.daily_loss||0).toFixed(3)+' SOL';
+  // Leaderboard
+  let leaderboard = (d.bot_leaderboard||[]);
+  document.getElementById('top-bot-name').textContent = leaderboard[0]?.name||'';
+  document.getElementById('top-bot-pl').textContent = (leaderboard[0]?.pl||0).toFixed(3)+' SOL';
+  document.getElementById('mid-bot-pl').textContent = (leaderboard[1]?.pl||0).toFixed(3)+' SOL';
+  document.getElementById('low-bot-pl').textContent = (leaderboard[2]?.pl||0).toFixed(3)+' SOL';
+  // Per-bot sections
+  document.getElementById('ultra-buys').textContent = (d.ultra_wins||0)+'/'+(d.ultra_total||0);
+  document.getElementById('ultra-win').textContent = ((d.ultra_total?100*d.ultra_wins/d.ultra_total:0).toFixed(1)+'%');
+  document.getElementById('ultra-pl').textContent = (d.ultra_pl<0?'':'+' )+(d.ultra_pl||0).toFixed(3)+' SOL';
+  document.getElementById('scalper-buys').textContent = (d.scalper_wins||0)+'/'+(d.scalper_total||0);
+  document.getElementById('scalper-win').textContent = ((d.scalper_total?100*d.scalper_wins/d.scalper_total:0).toFixed(1)+'%');
+  document.getElementById('scalper-pl').textContent = (d.scalper_pl<0?'':'+' )+(d.scalper_pl||0).toFixed(3)+' SOL';
+  document.getElementById('community-buys').textContent = (d.community_wins||0)+'/'+(d.community_total||0);
+  document.getElementById('community-win').textContent = ((d.community_total?100*d.community_wins/d.community_total:0).toFixed(1)+'%');
+  document.getElementById('community-pl').textContent = (d.community_pl<0?'':'+' )+(d.community_pl||0).toFixed(3)+' SOL';
+  let tbody=document.getElementById('positions-tbody');
+  tbody.innerHTML="";
+  let now=Date.now()/1000;
+  Object.entries(d.positions||{}).forEach(([k,v])=>{
+      let entry=parseFloat(v.entry_price||0),last=parseFloat(v.last_price||entry),sz=parseFloat(v.size||0),ml=Number(v.ml_score||0),phase=(v.phase||"");
+      let pl=last&&entry?((last-entry)*sz):0;
+      let pct=entry?100*(last-entry)/entry:0,plClass=pl<0?'negative':(pl>0?'positive':'');
+      let age=now-(v.buy_time||now),ageStr=formatAge(age);
+      tbody.innerHTML+=`<tr>
+        <td style="color:#297fff;font-weight:700;">${k.slice(0,5)+"..."+k.slice(-5)}</td>
+        <td>${v.src||''}</td>
+        <td>${sz||''}</td>
+        <td>${ml||''}</td>
+        <td>${entry?entry.toFixed(6):""}</td>
+        <td>${last?last.toFixed(6):""}</td>
+        <td class="${plClass}">${pl.toFixed(4)}</td>
+        <td>${pct.toFixed(2)}%</td>
+        <td>${phase}</td>
+        <td>${ageStr}</td>
+      </tr>`;
+  });
+  let logC = document.getElementById('log-container');
+  let logLines = (d.log||[]).slice(-30).map(x=>x.replace(/^\[\w+\]/,"<b>$&</b>"));
+  logC.innerHTML = logLines.join('<br>');
+  logC.scrollTop = logC.scrollHeight;
+};
+</script>
+</body>
+</html>
+"""
+
+async def dashboard_page(request):
+    return web.Response(text=DASHBOARD_HTML, content_type='text/html')
+
+async def websocket_handler(request):
+    ws = web.WebSocketResponse()
+    await ws.prepare(request)
+    while True:
+        # Per-bot stats for dashboard
+        ultra_wins, ultra_total, ultra_pl = 0, 0, 0
+        scalper_wins, scalper_total, scalper_pl = 0, 0, 0
+        community_wins, community_total, community_pl = 0, 0, 0
+        for logline in activity_log:
+            if "UltraEarly" in logline:
+                ultra_total += int("BUY" in logline and "UltraEarly" in logline)
+                ultra_wins += int("Sold 85%" in logline)
+                ultra_pl += float(logline.split("@")[-1].split()[0]) if "Sold" in logline else 0
+            if "Scalper" in logline:
+                scalper_total += int("limit-buy" in logline)
+                scalper_wins += int("Sold 80%" in logline)
+                scalper_pl += float(logline.split("@")[-1].split()[0]) if "Sold" in logline else 0
+            if "Community" in logline:
+                community_total += int("Buy" in logline and "[Community]" in logline)
+                community_wins += int("Sold 50%" in logline)
+                community_pl += float(logline.split("@")[-1].split()[0]) if "Sold" in logline else 0
+        bot_leaderboard = sorted([
+            {"name": "Ultra-Early", "pl": ultra_pl},
+            {"name": "2-Minute Scalper", "pl": scalper_pl},
+            {"name": "Community", "pl": community_pl}
+        ], key=lambda b: -b["pl"])
+        all_wins = ultra_wins + scalper_wins + community_wins
+        all_trades = ultra_total + scalper_total + community_total
+        await ws.send_str(json.dumps({
+            "status": runtime_status,
+            "exposure": exposure,
+            "daily_loss": daily_loss,
+            "positions": positions,
+            "log": activity_log,
+            "wallet_balance": current_wallet_balance,
+            "ultra_wins": ultra_wins, "ultra_total": ultra_total, "ultra_pl": ultra_pl,
+            "scalper_wins": scalper_wins, "scalper_total": scalper_total, "scalper_pl": scalper_pl,
+            "community_wins": community_wins, "community_total": community_total, "community_pl": community_pl,
+            "pl": get_total_pl(),
+            "winrate": (100*all_wins/all_trades) if all_trades else 0,
+            "bot_leaderboard": bot_leaderboard
+        }))
+        await asyncio.sleep(2)
+    await ws.close()
+    return ws
+
+def setup_web():
+    app = web.Application()
+    app.router.add_get("/", dashboard_page)
+    app.router.add_get("/ws", websocket_handler)
+    return app
+
+# ==== Main event loop as above (calls trading feeds and bot logic; unchanged) ====
+async def main():
+    # ...initialize toxibot, dashboard, task launches as from above
+    # (Use same feeding and trading task logic as in the full previous answer)
+    pass
+
+if __name__ == '__main__':
+    try: asyncio.run(main())
+    except Exception as e:
+        import traceback
+        logger.error(f"Top-level error: {repr(e)}")
+        traceback.print_exc()
+
+<!DOCTYPE html>
+<html>
+  <head>
+    ... all the way down ...
+  </body>
+</html>
+"""
 
 async def dashboard_page(request):
     return web.Response(text=DASHBOARD_HTML, content_type='text/html')
