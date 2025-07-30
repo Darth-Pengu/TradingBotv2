@@ -1,10 +1,29 @@
 #!/usr/bin/env python3
-import os, sys, asyncio, logging, random, aiohttp, json, time
+import os, sys, asyncio, logging, random, aiohttp, json, time, websockets
 from datetime import datetime, timedelta
 from typing import Set, Dict, Any, Optional, List
 from telethon import TelegramClient
 from telethon.sessions import StringSession
 from aiohttp import web
+
+async def pumpfun_newtoken_feed(callback):
+    uri = "wss://pumpportal.fun/api/data"
+    async with websockets.connect(uri) as websocket:
+        payload = {"method": "subscribeNewToken"}
+        await websocket.send(json.dumps(payload))
+        while True:
+            try:
+                message = await websocket.recv()
+                data = json.loads(message)
+                # The exact field might be "mintAddress" or "coinAddress" — check actual WS message format
+                token = data.get("params", {}).get("mintAddress") or \
+                        data.get("params", {}).get("coinAddress")
+                if token:
+                    await callback(token, "pumpfun")
+            except Exception as e:
+                print(f"Pump.fun WS err: {e}, reconnecting in 2s")
+                await asyncio.sleep(2)
+                break
 
 sys.stdout.reconfigure(line_buffering=True)
 sys.stderr.reconfigure(line_buffering=True)
