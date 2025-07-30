@@ -208,6 +208,9 @@ async def bitquery_trending_feed(callback):
     headers = {"X-API-KEY": api_key}
     while True:
         try:
+            logger.info(f"Using Bitquery key: {api_key[:6]}... (len={len(api_key)})")
+            logger.info(f"Headers: {headers}")
+
             async with aiohttp.ClientSession() as s:
                 r = await s.post(url, json=q, headers=headers)
                 data = await r.json()
