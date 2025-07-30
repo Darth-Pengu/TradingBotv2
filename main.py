@@ -475,7 +475,7 @@ async def update_position_prices_and_wallet():
         await asyncio.sleep(18)
 
 # ==== DASHBOARD_HTML ==== 
-DASHBOARD_HTML = """
+DASHBOARD_HTML = r"""
 <!DOCTYPE html>
 <html>
 <head>
