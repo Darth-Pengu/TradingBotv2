@@ -212,14 +212,26 @@ async def bitquery_trending_feed(callback):
             logger.info(f"Headers: {headers}")
             async with aiohttp.ClientSession() as s:
                 r = await s.post(url, json=q, headers=headers)
-                data = await r.json()
+                if r.status != 200:
+                    text = await r.text()
+                    logger.error(f"Bitquery HTTP error: {r.status}, text: {text}")
+                    continue  # Skip this cycle and retry later
+                try:
+                    data = await r.json()
+                except Exception as e:
+                    logger.error(f"Bitquery couldn't parse JSON: {e}, text: {await r.text()}")
+                    continue
+                if not data or "data" not in data:
+                    logger.error(f"Bitquery response missing data: {data}")
+                    continue
                 for trade in data.get("data", {}).get("Solana", {}).get("DEXTrades", []):
                     addr = trade.get("baseCurrency", {}).get("address", "")
-                    if addr: await callback(addr, "bitquery")
+                    if addr:
+                        await callback(addr, "bitquery")
         except Exception as e:
             logger.error(f"Bitquery feed error: {e}")
         await asyncio.sleep(180)
-
+           
 # COMMUNITY PERSONALITY VOTE AGGREGATOR
 async def community_candidate_callback(token, src):
     now = time.time()
