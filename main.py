@@ -83,6 +83,7 @@ class ToxiBotClient:
     def __init__(self, api_id, api_hash, session_id, username):
         self._client = TelegramClient(StringSession(session_id), api_id, api_hash, connection_retries=5)
         self.bot_username = username
+        
     async def connect(self):
         await self._client.start()
         logger.info("Connected to ToxiBot (Telegram).")
