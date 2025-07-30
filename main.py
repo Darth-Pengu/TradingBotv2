@@ -72,10 +72,11 @@ async def fetch_token_price(token: str) -> Optional[float]:
         url = f"https://api.dexscreener.com/latest/dex/tokens/{token}"
         async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=6)) as s:
             resp = await s.get(url)
-            = await resp.json()
-            for pair in .get("pairs", [{}]):
-                if pair.get("baseToken", {}).get("address", "") == token and "priceNative" in pair:
-                    return float(pair["priceNative"])
+data = await resp.json()
+for pair in data.get("pairs", [{}]):
+    if pair.get("baseToken", {}).get("address", "") == token and "priceNative" in pair:
+        return float(pair["priceNative"])
+
     except Exception as e:
         logger.warning(f"DEXScreener price error: {e}")
     return None
