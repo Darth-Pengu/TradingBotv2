@@ -407,6 +407,13 @@ async def main():
     while True:
         runtime_status = f"Tron Dashboard | Wallet {round(current_wallet_balance,2)} SOL | {len(positions)} open positions | +PL={get_total_pl():.4f}"
         await asyncio.sleep(3)
+if __name__ == '__main__':
+    try:
+        asyncio.run(main())
+    except Exception as e:
+        import traceback
+        logger.error(f"Top-level error: {repr(e)}")
+        traceback.print_exc()
 
 if __name__ == "__main__":
     try: asyncio.run(main())
