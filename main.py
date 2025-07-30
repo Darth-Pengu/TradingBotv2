@@ -657,7 +657,6 @@ ws.onmessage=function(ev){
 </body>
 </html>
 """
-
 async def dashboard_page(request):
     return web.Response(text=DASHBOARD_HTML, content_type='text/html')
 
