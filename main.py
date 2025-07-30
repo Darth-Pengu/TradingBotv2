@@ -72,8 +72,8 @@ async def fetch_token_price(token: str) -> Optional[float]:
         url = f"https://api.dexscreener.com/latest/dex/tokens/{token}"
         async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=6)) as s:
             resp = await s.get(url)
-            data = await resp.json()
-            for pair in data.get("pairs", [{}]):
+             = await resp.json()
+            for pair in .get("pairs", [{}]):
                 if pair.get("baseToken", {}).get("address", "") == token and "priceNative" in pair:
                     return float(pair["priceNative"])
     except Exception as e:
@@ -215,23 +215,25 @@ async def bitquery_trending_feed(callback):
             logger.info(f"Headers: {headers}")
             async with aiohttp.ClientSession() as s:
                 async with s.post(url, json=q, headers=headers) as r:
+                    logger.info(f"Bitquery HTTP status: {r.status}")
                     if r.status != 200:
                         text = await r.text()
                         logger.error(f"Bitquery HTTP error: {r.status}, text: {text}")
                         await asyncio.sleep(180)
-                        continue  # SKIP processing/fallback if not 200
+                        continue
                     try:
                         data = await r.json()
                     except Exception:
                         text = await r.text()
                         logger.error(f"Bitquery non-JSON response: {text}")
                         await asyncio.sleep(180)
-                        continue  # SKIP processing/fallback on JSON error
-                    if not data or "data" not in data:
-                        logger.error(f"Bitquery response missing 'data' key: {data}")
+                        continue
+                    logger.info(f"Bitquery received JSON: {data}")
+                    if not data or "data" not in data or "Solana" not in data["data"]:
+                        logger.error(f"Bitquery response missing 'data'/'Solana': {data}")
                         await asyncio.sleep(180)
                         continue
-                    for trade in data.get("data", {}).get("Solana", {}).get("DEXTrades", []):
+                    for trade in data["data"]["Solana"].get("DEXTrades", []):
                         addr = trade.get("baseCurrency", {}).get("address", "")
                         if addr:
                             await callback(addr, "bitquery")
@@ -276,23 +278,23 @@ async def rugcheck(token_addr: str) -> Dict[str, Any]:
         async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=6)) as session:
             async with session.get(url) as r:
                 if r.headers.get('content-type','').startswith('application/json'):
-                    data = await r.json()
+                     = await r.json()
                 else:
                     logger.warning(f"Rugcheck returned HTML for {token_addr}")
-                    data = {}
-                logger.info(f"Rugcheck {token_addr}: {data}")
-                return data
+                     = {}
+                logger.info(f"Rugcheck {token_addr}: {}")
+                return 
     except Exception as e:
         logger.error(f"Rugcheck error for {token_addr}: {e}")
         return {}
-def rug_gate(rugdata: Dict[str, Any]) -> Optional[str]:
-    if rugdata.get("label") != "Good":
+def rug_gate(rug: Dict[str, Any]) -> Optional[str]:
+    if rug.get("label") != "Good":
         return "rugcheck not Good"
-    if "bundled" in rugdata.get("supply_type", "").lower():
-        if rugdata.get("mint"): blacklisted_tokens.add(rugdata["mint"])
-        if rugdata.get("authority"): blacklisted_devs.add(rugdata["authority"])
+    if "bundled" in rug.get("supply_type", "").lower():
+        if rug.get("mint"): blacklisted_tokens.add(rug["mint"])
+        if rug.get("authority"): blacklisted_devs.add(rug["authority"])
         return "supply bundled"
-    if rugdata.get("max_holder_pct", 0) > 25:
+    if rug.get("max_holder_pct", 0) > 25:
         return "too concentrated"
     return None
 def is_blacklisted(token: str, dev: str = "") -> bool:
@@ -304,8 +306,8 @@ def ml_score_token(meta: Dict[str, Any]) -> float:
 # ==== ULTRA-EARLY (pump.fun)
 async def ultra_early_handler(token, toxibot):
     if is_blacklisted(token): return
-    rugdata = await rugcheck(token)
-    if rug_gate(rugdata): activity_log.append(f"{token} UltraEarly: Rug gated."); return
+    rug = await rugcheck(token)
+    if rug_gate(rug): activity_log.append(f"{token} UltraEarly: Rug gated."); return
     if token in positions:
         activity_log.append(f"{token} UltraEarly: Already traded, skipping."); return
     rises, last_liq, last_buyers = 0, 0, 0
@@ -325,7 +327,7 @@ async def ultra_early_handler(token, toxibot):
         "entry_price": entry_price, "last_price": entry_price,
         "phase": "filled", "pl": 0.0,
         "local_high": entry_price,"hard_sl": entry_price * ULTRA_SL_X,
-        "runner_trail": 0.3,"dev": rugdata.get("authority")
+        "runner_trail": 0.3,"dev": rug.get("authority")
     }
     activity_log.append(f"{token} UltraEarly: BUY {ULTRA_BUY_AMOUNT} @ {entry_price:.5f}")
 
@@ -343,8 +345,8 @@ async def scalper_handler(token, src, toxibot):
     if not (liq_ok and age_ok and vol_ok):
         activity_log.append(f"{token} [Scalper] Entry FAIL: Liq:{liq_ok}, Age:{age_ok}, Vol:{vol_ok}")
         return
-    rugdata = await rugcheck(token)
-    if rug_gate(rugdata): activity_log.append(f"{token} [Scalper] Rug gated."); return
+    rug = await rugcheck(token)
+    if rug_gate(rug): activity_log.append(f"{token} [Scalper] Rug gated."); return
     entry_price = await fetch_token_price(token) or 0.01
     limit_price = entry_price * 0.97
     await toxibot.send_buy(token, SCALPER_BUY_AMOUNT, price_limit=limit_price)
@@ -354,7 +356,7 @@ async def scalper_handler(token, src, toxibot):
         "entry_price": limit_price, "last_price": limit_price,
         "phase": "waiting_fill", "pl": 0.0,
         "local_high": limit_price, "hard_sl": limit_price * SCALPER_SL_X,
-        "liq_ref": pool_stats["base_liq"], "dev": rugdata.get("authority"),
+        "liq_ref": pool_stats["base_liq"], "dev": rug.get("authority"),
     }
     activity_log.append(f"{token} Scalper: limit-buy {SCALPER_BUY_AMOUNT} @ {limit_price:.5f}")
 
@@ -364,13 +366,13 @@ async def community_trade_manager(toxibot):
     while True:
         token = await community_token_queue.get()
         if is_blacklisted(token): continue
-        rugdata = await rugcheck(token)
-        dev = rugdata.get("authority")
-        if rug_gate(rugdata) or (dev and dev in recent_rugdevs):
+        rug = await rugcheck(token)
+        dev = rug.get("authority")
+        if rug_gate(rug) or (dev and dev in recent_rugdevs):
             activity_log.append(f"{token} [Community] rejected: Ruggate or rugdev.")
             continue
-        holders_data = await fetch_holders_and_conc(token)
-        if holders_data["holders"] < COMM_HOLDER_THRESHOLD or holders_data["max_holder_pct"] > COMM_MAX_CONC:
+        holders_ = await fetch_holders_and_conc(token)
+        if holders_["holders"] < COMM_HOLDER_THRESHOLD or holders_["max_holder_pct"] > COMM_MAX_CONC:
             activity_log.append(f"{token} [Community] fails holder/distribution screen.")
             continue
         if token in positions:
@@ -624,7 +626,7 @@ function formatAge(secs) {
 }
 var ws=new WebSocket("ws://"+location.host+"/ws");
 ws.onmessage=function(ev){
-  var d=JSON.parse(ev.data||"{}");
+  var d=JSON.parse(ev.||"{}");
   document.getElementById('botstat').className = ((d.status||"").toLowerCase().includes("live")?"status-on":"status-off");
   document.getElementById('botstat').textContent = ((d.status||"").toLowerCase().includes("live"))?'ACTIVE':'NOT ACTIVE';
   document.getElementById('wallet').textContent = (d.wallet_balance??"0.00").toFixed(2)+' SOL';
