@@ -197,41 +197,48 @@ async def moralis_trending_feed(callback):
         except Exception as e:
             logger.error(f"Moralis feed error: {e}")
         await asyncio.sleep(120)
-
+        
 async def bitquery_trending_feed(callback):
-    api_key = BITQUERY_API_KEY
+    api_key = BITQUERY_API_KEY  # Your env var with the OAuth token (ory_at_...)
     if not api_key:
         logger.warning("Bitquery trending feed not enabled (no OAuth token).")
         return
     url = "https://streaming.bitquery.io/graphql"
     q = {"query": "{Solana{DEXTrades(limit:10){baseCurrency{address}}}}"}
-    headers = {"Authorization": f"Bearer {api_key}"}
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {api_key}"
+    }
     while True:
         try:
             logger.info(f"Using Bitquery key: {api_key[:6]}... (len={len(api_key)})")
             logger.info(f"Headers: {headers}")
             async with aiohttp.ClientSession() as s:
-                r = await s.post(url, json=q, headers=headers)
-                if r.status != 200:
-                    text = await r.text()
-                    logger.error(f"Bitquery HTTP error: {r.status}, text: {text}")
-                    continue  # Skip this cycle and retry later
-                try:
-                    data = await r.json()
-                except Exception as e:
-                    logger.error(f"Bitquery couldn't parse JSON: {e}, text: {await r.text()}")
-                    continue
-                if not data or "data" not in data:
-                    logger.error(f"Bitquery response missing data: {data}")
-                    continue
-                for trade in data.get("data", {}).get("Solana", {}).get("DEXTrades", []):
-                    addr = trade.get("baseCurrency", {}).get("address", "")
-                    if addr:
-                        await callback(addr, "bitquery")
+                async with s.post(url, json=q, headers=headers) as r:
+                    if r.status != 200:
+                        text = await r.text()
+                        logger.error(f"Bitquery HTTP error: {r.status}, text: {text}")
+                        await asyncio.sleep(180)
+                        continue
+                    try:
+                        data = await r.json()
+                    except Exception:
+                        text = await r.text()
+                        logger.error(f"Bitquery non-JSON response: {text}")
+                        await asyncio.sleep(180)
+                        continue
+                    if not data or "data" not in data:
+                        logger.error(f"Bitquery response missing data: {data}")
+                        await asyncio.sleep(180)
+                        continue
+                    for trade in data.get("data", {}).get("Solana", {}).get("DEXTrades", []):
+                        addr = trade.get("baseCurrency", {}).get("address", "")
+                        if addr:
+                            await callback(addr, "bitquery")
         except Exception as e:
             logger.error(f"Bitquery feed error: {e}")
         await asyncio.sleep(180)
-           
+
 # COMMUNITY PERSONALITY VOTE AGGREGATOR
 async def community_candidate_callback(token, src):
     now = time.time()
