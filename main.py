@@ -725,14 +725,6 @@ if __name__ == '__main__':
         logger.error(f"Top-level error: {repr(e)}")
         traceback.print_exc()
 
-<!DOCTYPE html>
-<html>
-  <head>
-    ... all the way down ...
-  </body>
-</html>
-"""
-
 async def dashboard_page(request):
     return web.Response(text=DASHBOARD_HTML, content_type='text/html')
 
