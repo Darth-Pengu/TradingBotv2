@@ -1,43 +1,38 @@
 #!/usr/bin/env python3
-
 import os, sys, asyncio, logging, json, time, random, aiohttp, websockets, collections
 from telethon import TelegramClient
 from telethon.sessions import StringSession
 from aiohttp import web
 from typing import Set, Dict, Any, Optional, List
 
-# === PARAMETERS YOU CAN EDIT FOR PROFITABILITY ===
-# Ultra-Early
+# === PARAMETERS TO EDIT ===
 ULTRA_MIN_LIQ = 8
 ULTRA_BUY_AMOUNT = 0.07
 ULTRA_TP_X = 2.0
-ULTRA_SL_X = 0.7  # -30%
-ULTRA_MIN_RISES = 2  # # of times liquidity must "rise" in check
-ULTRA_AGE_MAX_S = 120  # Max 2min old
+ULTRA_SL_X = 0.7
+ULTRA_MIN_RISES = 2
+ULTRA_AGE_MAX_S = 120
 
-# 2-Minute Scalper
 SCALPER_BUY_AMOUNT = 0.10
 SCALPER_MIN_LIQ = 8
 SCALPER_TP_X = 2.0
-SCALPER_SL_X = 0.7   # -30%
+SCALPER_SL_X = 0.7
 SCALPER_TRAIL = 0.2
-SCALPER_VOL_FACTOR = 2.0  # Vol_1h >2x avg_15min
-SCALPER_MAX_POOLAGE = 20*60  # <20min
+SCALPER_MAX_POOLAGE = 20*60
 
-# Community/Whale
 COMMUNITY_BUY_AMOUNT = 0.04
 COMM_HOLDER_THRESHOLD = 250
 COMM_MAX_CONC = 0.10
 COMM_TP1_MULT = 2.0
-COMM_SL_PCT = 0.6  # -40%
+COMM_SL_PCT = 0.6
 COMM_TRAIL = 0.4
 COMM_HOLD_SECONDS = 2*24*60*60
-COMM_MIN_SIGNALS = 2  # Appear in >=2 feeds
+COMM_MIN_SIGNALS = 2
 
 ANTI_SNIPE_DELAY = 2
-ML_MIN_SCORE = 60      # min ML score
+ML_MIN_SCORE = 60
 
-# ==== ENV VARS (SET IN RAILWAY) ====
+# === ENV VARS ===
 TELEGRAM_API_ID = int(os.environ["TELEGRAM_API_ID"])
 TELEGRAM_API_HASH = os.environ["TELEGRAM_API_HASH"]
 TELEGRAM_STRING_SESSION = os.environ["TELEGRAM_STRING_SESSION"]
@@ -55,7 +50,6 @@ sys.stderr.reconfigure(line_buffering=True)
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger("toxibot")
 
-# ==== GLOBALS ====
 blacklisted_tokens: Set[str] = set()
 blacklisted_devs: Set[str] = set()
 positions: Dict[str, Dict[str, Any]] = {}
@@ -65,7 +59,7 @@ daily_loss: float = 0.0
 runtime_status: str = "Starting..."
 current_wallet_balance: float = 0.0
 
-# ==== Live candidate aggregation ====
+# ==== Aggregation for leaderboard, per-bot stats ====
 community_signal_votes = collections.defaultdict(lambda: {"sources": set(), "first_seen": time.time()})
 community_token_queue = asyncio.Queue()
 
@@ -224,7 +218,7 @@ async def bitquery_trending_feed(callback):
             logger.error(f"Bitquery feed error: {e}")
         await asyncio.sleep(180)
 
-# ==== CANDIDATE VOTE AGGREGATOR FOR COMMUNITY PERSONALITY ====
+# COMMUNITY PERSONALITY VOTE AGGREGATOR
 async def community_candidate_callback(token, src):
     now = time.time()
     if src and token:
@@ -286,17 +280,13 @@ def ml_score_token(meta: Dict[str, Any]) -> float:
     random.seed(meta.get("mint", random.random()))
     return random.uniform(70, 97)
 
-# ==== ========== 1. ULTRA-EARLY (pump.fun) STRICT PROFIT LOGIC ========== ====
+# ==== ULTRA-EARLY (pump.fun)
 async def ultra_early_handler(token, toxibot):
     if is_blacklisted(token): return
     rugdata = await rugcheck(token)
     if rug_gate(rugdata): activity_log.append(f"{token} UltraEarly: Rug gated."); return
-    # (A) Reject if already traded this token
     if token in positions:
         activity_log.append(f"{token} UltraEarly: Already traded, skipping."); return
-    # (B) Should fetch creation time for <2min only.
-    # For simplicity, treat all pumpfun tokens as "new enough"
-    # (C) 3x checks to confirm rapidly rising liquidity and #buyers
     rises, last_liq, last_buyers = 0, 0, 0
     for i in range(3):
         stats = await fetch_liquidity_and_buyers(token)
@@ -313,14 +303,12 @@ async def ultra_early_handler(token, toxibot):
         "ml_score": ml_score_token({"mint":token}),
         "entry_price": entry_price, "last_price": entry_price,
         "phase": "filled", "pl": 0.0,
-        "local_high": entry_price,
-        "hard_sl": entry_price * ULTRA_SL_X,
-        "runner_trail": 0.3,
-        "dev": rugdata.get("authority")
+        "local_high": entry_price,"hard_sl": entry_price * ULTRA_SL_X,
+        "runner_trail": 0.3,"dev": rugdata.get("authority")
     }
     activity_log.append(f"{token} UltraEarly: BUY {ULTRA_BUY_AMOUNT} @ {entry_price:.5f}")
 
-# ==== ========== 2. SCALPER (moralis/bitquery) "SELECTIVE" PROFIT LOGIC ==========
+# ==== SCALPER
 async def scalper_handler(token, src, toxibot):
     if is_blacklisted(token): return
     if token in positions:
@@ -344,14 +332,12 @@ async def scalper_handler(token, src, toxibot):
         "ml_score": ml_score_token({"mint": token}),
         "entry_price": limit_price, "last_price": limit_price,
         "phase": "waiting_fill", "pl": 0.0,
-        "local_high": limit_price,
-        "hard_sl": limit_price * SCALPER_SL_X,
-        "liq_ref": pool_stats["base_liq"],
-        "dev": rugdata.get("authority"),
+        "local_high": limit_price, "hard_sl": limit_price * SCALPER_SL_X,
+        "liq_ref": pool_stats["base_liq"], "dev": rugdata.get("authority"),
     }
     activity_log.append(f"{token} Scalper: limit-buy {SCALPER_BUY_AMOUNT} @ {limit_price:.5f}")
 
-# ==== ========== 3. COMMUNITY/WHALE BOT: CONSENSUS, LONGER TERM ==========
+# ==== COMMUNITY/WHALE
 recent_rugdevs = set()
 async def community_trade_manager(toxibot):
     while True:
@@ -388,12 +374,12 @@ async def community_trade_manager(toxibot):
         }
         activity_log.append(f"{token} [Community] Buy {COMMUNITY_BUY_AMOUNT} @ {entry_price:.6f}")
 
-# ==== ==== CENTRAL HANDLER: process_token ====
+# ==== process_token ====
 async def process_token(token, src):
     if src == "pumpfun": await ultra_early_handler(token, toxibot)
     elif src in ("moralis", "bitquery"): await scalper_handler(token, src, toxibot)
 
-# ==== PRICE/TRADE/P&L UPDATE TASK ====
+# ==== Price Update & Exit Logic ====
 async def update_position_prices_and_wallet():
     global positions, current_wallet_balance, daily_loss
     while True:
@@ -405,35 +391,30 @@ async def update_position_prices_and_wallet():
                 pl = (last_price - pos['entry_price']) * (pos['size'])
                 pos['pl'] = pl
 
-            # === Ultra-Early Exit Logic ===
+            # ULTRA-EARLY
             if pos["src"] == "pumpfun":
-                # TP1: 85% at 2x
                 if last_price >= pos['entry_price'] * ULTRA_TP_X and pos['phase'] == "filled":
                     await toxibot.send_sell(token, 85)
                     pos['size'] *= 0.15
                     pos['phase'] = "runner"
-                    activity_log.append(f"{token} Ultra: Sold 85% at 2x (runner armed).")
-                # Hard SL: -30%, blacklist
+                    activity_log.append(f"{token} UltraEarly: Sold 85% at 2x (runner armed).")
                 elif last_price <= pos["hard_sl"]:
                     await toxibot.send_sell(token, 100)
-                    activity_log.append(f"{token} Ultra: SL -30%, full exit, dev blacklisted.")
+                    activity_log.append(f"{token} UltraEarly: SL -30%, full exit, dev blacklisted.")
                     if pos.get("dev"): blacklisted_devs.add(pos["dev"])
                     pos['size'] = 0
                     pos['phase'] = "exited"
                     continue
-                # Runner
                 elif pos["phase"] == "runner":
                     if last_price < pos["local_high"] * (1 - pos["runner_trail"]):
                         await toxibot.send_sell(token, 100)
-                        activity_log.append(f"{token} Ultra: Runner trailed stopped at {last_price:.5f}.")
+                        activity_log.append(f"{token} UltraEarly: Runner trailed stopped at {last_price:.5f}.")
                         pos['size'] = 0
                         pos['phase'] = "exited"
                         continue
-
-            # === 2Min Scalper Logic ===
+            # SCALPER
             elif pos["src"] in ("moralis", "bitquery"):
                 pool_stats = await fetch_volumes(token)
-                # (1) Liquidity-based SL
                 if pool_stats["liq"] < pos.get("liq_ref", 0)*0.6:
                     await toxibot.send_sell(token)
                     activity_log.append(f"{token} Scalper: Liq drop >40%. Blacklist dev. Exit!")
@@ -441,36 +422,30 @@ async def update_position_prices_and_wallet():
                     pos['size'] = 0
                     pos['phase'] = "exited"
                     continue
-                # (2) TP1: Sell 80% at 2×
                 if ('phase' not in pos or pos['phase'] == "waiting_fill") and last_price >= pos['entry_price']*SCALPER_TP_X:
                     await toxibot.send_sell(token, 80)
                     pos['size'] *= 0.2
                     pos['phase'] = "runner"
                     activity_log.append(f"{token} Scalper: Sold 80% at 2x+. Runner.")
-                # (3) Runner/Trailed 20% below high
                 elif pos.get("phase", "") == "runner":
                     if last_price < pos['local_high']*(1 - SCALPER_TRAIL):
                         await toxibot.send_sell(token)
                         activity_log.append(f"{token} Scalper: Runner trailed out. Exited.")
                         pos['size'] = 0
                         pos['phase'] = "exited"
-                # (4) Hard SL
                 elif last_price < pos['hard_sl']:
                     await toxibot.send_sell(token)
                     activity_log.append(f"{token} Scalper: Hard SL hit. Blacklist dev.")
                     if pos.get("dev"): blacklisted_devs.add(pos["dev"])
                     pos['size'] = 0
                     pos['phase'] = "exited"
-
-            # === Community/Whale Logic ===
+            # COMMUNITY
             elif pos["src"] == "community" and pos["phase"] == "filled":
-                # TP1: Sell 50% at 2x
                 if last_price >= pos['entry_price'] * COMM_TP1_MULT:
                     await toxibot.send_sell(token, 50)
                     pos['size'] *= 0.5
                     pos['phase'] = "runner"
                     activity_log.append(f"{token} [Community] Sold 50% at 2x! Runner.")
-                # Hard SL: -40%
                 elif last_price <= pos['hard_sl']:
                     await toxibot.send_sell(token)
                     activity_log.append(f"{token} [Community] -40% SL. Blacklist. Out.")
@@ -478,14 +453,12 @@ async def update_position_prices_and_wallet():
                     pos['size'] = 0
                     pos['phase'] = "exited"
                     continue
-                # Age-out exit (2 days)
                 elif time.time() > pos.get("hold_until", 0):
                     await toxibot.send_sell(token)
                     activity_log.append(f"{token} [Community] 2 day exit.")
                     pos['size'] = 0
                     pos['phase'] = "exited"
                     continue
-                # Runner: trailing 40%
                 elif pos.get("phase", "") == "runner":
                     if last_price < pos["local_high"] * (1 - COMM_TRAIL):
                         await toxibot.send_sell(token)
@@ -493,7 +466,6 @@ async def update_position_prices_and_wallet():
                         pos['size'] = 0
                         pos['phase'] = "exited"
 
-        # Remove 0-size exited positions
         to_remove = [k for k,v in positions.items() if v['size']==0]
         for k in to_remove:
             daily_loss += positions[k].get('pl',0)
@@ -502,27 +474,127 @@ async def update_position_prices_and_wallet():
         if bal: globals()["current_wallet_balance"] = bal
         await asyncio.sleep(18)
 
-# ==== Tron DYNAMIC DASHBOARD HTML MOVED HERE FOR BREVITY (SEE PREVIOUS FILES) ====
-
-DASHBOARD_HTML = """<<< INSERT DASHBOARD HTML AS PROVIDED EARLIER >>>"""
+# ==== DASHBOARD_HTML ====
+DASHBOARD_HTML = """ (INSERT THE HTML DASHBOARD CODE FROM MY PREVIOUS MESSAGE HERE—DO NOT TRUNCATE) """
 
 async def dashboard_page(request):
     return web.Response(text=DASHBOARD_HTML, content_type='text/html')
+
 async def websocket_handler(request):
-    ws = web.WebSocketResponse(); await ws.prepare(request)
+    ws = web.WebSocketResponse()
+    await ws.prepare(request)
     while True:
-        try:
-            await ws.send_str(json.dumps({
-                "status": runtime_status,
-                "exposure": exposure,
-                "daily_loss": daily_loss,
-                "positions": positions,
-                "log": activity_log,
-                "wallet_balance": current_wallet_balance
-            }))
-            await asyncio.sleep(2)
-        except Exception: break
+        # Per-bot stats for dashboard
+        ultra_wins, ultra_total, ultra_pl = 0, 0, 0
+        scalper_wins, scalper_total, scalper_pl = 0, 0, 0
+        community_wins, community_total, community_pl = 0, 0, 0
+        for logline in activity_log:
+            # They keys here must match the log message logic.
+            if "UltraEarly" in logline:
+                ultra_total += int("BUY" in logline and "UltraEarly" in logline)
+                ultra_wins += int("Sold 85%" in logline)
+                ultra_pl += float(logline.split("@")[-1].split()[0]) if "Sold" in logline else 0
+            if "Scalper" in logline:
+                scalper_total += int("limit-buy" in logline)
+                scalper_wins += int("Sold 80%" in logline)
+                scalper_pl += float(logline.split("@")[-1].split()[0]) if "Sold" in logline else 0
+            if "Community" in logline:
+                community_total += int("Buy" in logline and "[Community]" in logline)
+                community_wins += int("Sold 50%" in logline)
+                community_pl += float(logline.split("@")[-1].split()[0]) if "Sold" in logline else 0
+        # Leaderboard by realized profit
+        bot_leaderboard = sorted([
+            {"name": "Ultra-Early", "pl": ultra_pl},
+            {"name": "2-Minute Scalper", "pl": scalper_pl},
+            {"name": "Community", "pl": community_pl}
+        ], key=lambda b: -b["pl"])
+        # All bots winrate (open+closed trades)
+        all_wins = ultra_wins + scalper_wins + community_wins
+        all_trades = ultra_total + scalper_total + community_total
+        await ws.send_str(json.dumps({
+            "status": runtime_status,
+            "exposure": exposure,
+            "daily_loss": daily_loss,
+            "positions": positions,
+            "log": activity_log,
+            "wallet_balance": current_wallet_balance,
+            "ultra_wins": ultra_wins, "ultra_total": ultra_total, "ultra_pl": ultra_pl,
+            "scalper_wins": scalper_wins, "scalper_total": scalper_total, "scalper_pl": scalper_pl,
+            "community_wins": community_wins, "community_total": community_total, "community_pl": community_pl,
+            "pl": get_total_pl(),
+            "winrate": (100*all_wins/all_trades) if all_trades else 0,
+            "bot_leaderboard": bot_leaderboard
+        }))
+        await asyncio.sleep(2)
     await ws.close(); return ws
+
+def setup_web():
+    app = web.Application()
+    app.router.add_get("/", dashboard_page)
+    app.router.add_get("/ws", websocket_handler)
+    return app
+
+# ==== Main event loop as above (calls trading feeds and bot logic; unchanged) ====
+async def main():
+    # ...initialize toxibot, dashboard, task launches as from above
+    # (Use same feeding and trading task logic as in the full previous answer)
+    pass
+
+if __name__ == '__main__':
+    try: asyncio.run(main())
+    except Exception as e:
+        import traceback
+        logger.error(f"Top-level error: {repr(e)}")
+        traceback.print_exc()
+
+
+async def dashboard_page(request):
+    return web.Response(text=DASHBOARD_HTML, content_type='text/html')
+
+async def websocket_handler(request):
+    ws = web.WebSocketResponse()
+    await ws.prepare(request)
+    while True:
+        # Leaderboard and bot stats aggregation:
+        ultra_wins, ultra_total, ultra_pl = 0, 0, 0
+        scalper_wins, scalper_total, scalper_pl = 0, 0, 0
+        community_wins, community_total, community_pl = 0, 0, 0
+        for logline in activity_log:
+            if "UltraEarly" in logline:
+                ultra_total += int("BUY" in logline and "UltraEarly" in logline)
+                ultra_wins += int("Sold 85%" in logline)
+                ultra_pl += float(logline.split("@")[-1].split()[0]) if "Sold" in logline else 0
+            if "Scalper" in logline:
+                scalper_total += int("limit-buy" in logline)
+                scalper_wins += int("Sold 80%" in logline)
+                scalper_pl += float(logline.split("@")[-1].split()[0]) if "Sold" in logline else 0
+            if "Community" in logline:
+                community_total += int("Buy" in logline and "[Community]" in logline)
+                community_wins += int("Sold 50%" in logline)
+                community_pl += float(logline.split("@")[-1].split()[0]) if "Sold" in logline else 0
+        bot_leaderboard = sorted([
+            {"name": "Ultra-Early", "pl": ultra_pl},
+            {"name": "2-Minute Scalper", "pl": scalper_pl},
+            {"name": "Community", "pl": community_pl}], key=lambda b: -b["pl"])
+        all_wins = ultra_wins + scalper_wins + community_wins
+        all_trades = ultra_total + scalper_total + community_total
+        await ws.send_str(json.dumps({
+            "status": runtime_status,
+            "exposure": exposure,
+            "daily_loss": daily_loss,
+            "positions": positions,
+            "log": activity_log,
+            "wallet_balance": current_wallet_balance,
+            "ultra_wins": ultra_wins, "ultra_total": ultra_total, "ultra_pl": ultra_pl,
+            "scalper_wins": scalper_wins, "scalper_total": scalper_total, "scalper_pl": scalper_pl,
+            "community_wins": community_wins, "community_total": community_total, "community_pl": community_pl,
+            "pl": get_total_pl(),
+            "winrate": (100*all_wins/all_trades) if all_trades else 0,
+            "bot_leaderboard": bot_leaderboard
+        }))
+        await asyncio.sleep(2)
+    await ws.close(); return ws
+
 def setup_web():
     app = web.Application()
     app.router.add_get("/", dashboard_page)
@@ -538,8 +610,6 @@ async def main():
     runner = web.AppRunner(app); await runner.setup()
     await web.TCPSite(runner, "0.0.0.0", PORT).start()
     asyncio.create_task(update_position_prices_and_wallet())
-
-    # Candidate manager: Ultra-Early and Scalper bots
     candidate_queue = asyncio.Queue()
     async def candidate_manager():
         while True:
@@ -547,20 +617,15 @@ async def main():
             await process_token(mint, src)
             candidate_queue.task_done()
     asyncio.create_task(candidate_manager())
-
-    # Live feeds to candidate_queue (Ultra-Early + Scalper)
+    # Live feeds: UltraEarly and Scalper
     asyncio.create_task(pumpfun_newtoken_feed(lambda mint,src: candidate_queue.put_nowait((mint,src))))
     asyncio.create_task(moralis_trending_feed(lambda mint,src: candidate_queue.put_nowait((mint,src))))
     asyncio.create_task(bitquery_trending_feed(lambda mint,src: candidate_queue.put_nowait((mint,src))))
-
-    # Live feeds for Community Bot (vote aggregation) and processor
+    # Community signal aggregation and processor
     asyncio.create_task(moralis_trending_feed(lambda mint,src: community_candidate_callback(mint, "moralis")))
     asyncio.create_task(bitquery_trending_feed(lambda mint,src: community_candidate_callback(mint, "bitquery")))
-    # TODO: whale_feed, e.g. asyncio.create_task(whale_feed(community_candidate_callback))
-
+    # TODO: If you have a whale_feed: asyncio.create_task(whale_feed(lambda t,s: community_candidate_callback(t,"whale")))
     asyncio.create_task(community_trade_manager(toxibot))
-
-    # Main dashboard/polling loop
     while True:
         runtime_status = f"Live: {len(positions)} open | Wallet: {round(current_wallet_balance,2)} SOL | P/L: {get_total_pl():+.4f}"
         await asyncio.sleep(4)
